@@ -11,70 +11,50 @@ This repository implements a robust, dual-framework approach designed to detect 
 
 To ensure a smooth experience executing the pipeline, please follow this step-by-step guidance system. This system is designed to walk you through data formatting, environment configuration, and execution of the dual frameworks.
 
-### Step 1: Environment Setup
-The architecture is optimized for high-performance execution on CUDA-enabled environments. To run the pipeline successfully, ensure your environment is configured with the following dependencies:
-* **Deep Learning**: `torch` (PyTorch with CUDA support), `torch.nn`, `torch.nn.functional`
-* **GPU-Accelerated Machine Learning**: `cuml` and `cupy` (for NearestNeighbors and Local Outlier Factor calculations)
-* **Data Processing & Graph Operations**: `scipy`, `numpy`, `pandas`, `networkx`
-* **Standard ML**: `sklearn.ensemble.IsolationForest`
+### Step 1: Prerequisites & Requirements
+To operate the system successfully, you must have the following environment set up:
+* **Compute Environment:** Google Colab with a **GPU runtime enabled** (strictly required for `cuML`, `CuPy`, and PyTorch tensor execution).
+* **Dependencies:** Python 3.x, `torch`, `networkx`, `scipy`, `numpy`, `pandas`, `cuml`, `cupy`, `scikit-learn`, `plotly`, `ipywidgets`, `firebase_admin`, and `google-genai`. *(Note: The provided notebook contains a cell to install required external packages automatically).*
+* **API Keys/External Services:**
+  * **Firebase Service Account Key (JSON):** Required if you plan to import the default dataset or back up your dataset to Firebase Storage.
+  * **Gemini API Key:** Required to utilize the "Create AI Report" advanced summarization feature.
+  * 📝 **Note on Credentials:** *The notebook comes pre-configured with a default Gemini API key and Firebase JSON file so you can run the project out-of-the-box. However, you can easily change or update these credentials within the notebook if you prefer to use your own personal accounts.*
 
-### Step 2: Data Preparation & Ingestion
-The pipeline dynamically loads graph metadata and ground-truth anomalies to construct a directed citation graph. Your data must adhere strictly to the following naming conventions and schema. Place these files in your root or `/content/` directory:
+### Step 2: Getting Started
+1. **Get the Code:** You have a few options to access the environment:
+   * Clone this GitHub repository to your local machine.
+   * Mount it directly into your Google Drive for Colab access.
+   * **Download the `Project_Phase_B.ipynb` file directly from this repository and upload it to Google Colab.**
+2. **Open the Environment:** Ensure `Project_Phase_B.ipynb` is open in Google Colab.
+3. **Initialize the System:** From the Colab top menu, select **Runtime > Run all**. This will:
+   * Install the required libraries.
+   * Initialize Firebase.
+   * Compile the model definitions.
+   * Launch the interactive visual interface at the bottom of the notebook.
 
-1. **Graph Metadata File (`papers_metadata_{dataset_name}.csv`)**:
-   * Contains the nodes and edges of your network.
-   * **Required Columns**: 
-     * `id`: The unique identifier for the source paper.
-     * `referenced_works`: A stringified list (parsable by `ast.literal_eval`) of target node IDs cited by the source paper.
-2. **Ground Truth File (`{dataset_name}_anomalies.csv`)**:
-   * Contains the labels for validation.
-   * **Required Columns**:
-     * `id`: The unique identifiers of the known anomalous papers.
 
+### Step 3: Pipeline Execution Stages
+Once the UI is loaded, execute the framework using the interactive portal:
 
-### Step 3: Execution Flow & Framework Methodology
+#### Stage 1: The Entry Page
+* Upon launching the interface, the welcome portal will appear. 
+* Click the **Start Analysis** button to proceed.
 
-The system is split into two primary detection phases:
+#### Stage 2: The Parsing Page (Dataset Setup)
+* **Select Data Source:** * Choose **"Import from Firebase (Default)"** to pull the pre-configured OpenAlex Computer Science citation subgraph.
+  * Choose **"Upload a New Dataset"** to use your own academic data.
+    * *Requirement for Custom Data:* The uploaded file must be a CSV explicitly named `papers_metadata.csv`. It must include the columns: `id`, `referenced_works`, and `primary_topic` (which must contain 'Computer Science' entries).
+* **Run the Pipeline:** Click **Load and Generate Datasets**. The system will automatically parse your graph and inject 5 synthetic anomaly typologies for controlled validation. It will then initiate the multi-run learning loop (N=5) and Power Method computation.
+* *Note: The evaluation loop may take several minutes depending on the graph size. Once finished, the dashboard will open automatically.*
 
-#### Phase A: Spectral Structural Anomaly Detection
-The function `run_spectral()` provides a deterministic baseline using the Power Method.
-1. It row-normalizes the sparse adjacency matrix using inverse out-degrees.
-2. Iteratively calculates the dominant eigenvector (v1) until convergence (L_inf norm `< 1e-7`).
-3. Computes a continuous Z-score based on the mean and standard deviation of the eigenvector.
-4. Nodes exceeding the defined threshold are flagged as structural anomalies.
+#### Stage 3: Multi-Perspective Result Analysis (The Dashboard)
+The final stage provides an interactive dashboard to explore the topological results:
+* **Select Dataset:** Toggle between the 5 generated anomaly scenarios (e.g., Coercive Citations, Citation Cartels) to see how the system responded to different threats.
+* **Select View:** Navigate through various visual analytics:
+  1. **Convergence Analysis Plots:** View Recall@K, Precision@K, and Overlap Ratios comparing the global spectral baseline against the local GNN metrics.
+  2. **Anomaly Score Distribution:** Inspect logarithmic histograms mapping the statistical separability of normal versus injected anomalous nodes.
+  3. **Local Topological Visualizations:** Examine the directed structural neighborhoods (subgraphs) of heavily flagged nodes.
+  4. **3D Network Visualization:** Explore the manipulated network topography interactively via Plotly.
+* **Advanced Features & Export:** * **Download Raw Data:** Extract the raw numeric convergence metrics log to your local machine for further academic review.
+  * **Create AI Report:** Automatically summarize the empirical performance using the integrated Gemini API to output a comprehensive, publication-ready markdown analysis.
 
-#### Phase B: Learning-Based Structural Anomaly Detection (Partial GLAD)
-The function `train_glad_model()` trains a Graph Neural Network utilizing PyTorch sparse tensor operations.
-1. **Input Features**: Extracts local topological node features including in-degree, out-degree, in/out ratio, and 2-hop neighborhood counts.
-2. **Encoder Architecture (`CitationGNNEncoder`)**: A 2-layer GNN that independently aggregates messages from *cited* (forward edges), *citing* (backward edges), and *self-loops*.
-3. **Training**: Uses self-supervised link prediction with a `BCEWithLogitsLoss` criterion. Positive edges are sampled from the graph, and negative edges are randomly generated.
-4. **Outputs**: Generates L2-normalized node embeddings (`embeddings_matrix`) capturing complex structural semantics.
-
-### Step 4: Anomaly Scoring & Interpreting Results
-After generating embeddings, the `compute_glad_scores()` function compares each node's embedding against its local neighborhood context (calculated via `A_reconstructed.dot(embeddings) / out_degree`).
-
-Anomalies are ranked using four distinct metrics:
-* **Euclidean**: L2 distance between the node embedding and its context.
-* **Cosine**: Cosine distance (1 - similarity) between the node and its context.
-* **LOF**: GPU-accelerated Local Outlier Factor (`custom_lof_gpu` / `cuml`), measuring local reachability density.
-* **Isolation Forest**: Tree-based outlier detection (`sklearn`), isolating anomalies based on embedding path lengths.
-
-The system will print convergence results grouped by $K$ (e.g., top 1%, 5%, 10% of nodes):
-* **Hits**: The raw count of true anomalies successfully detected.
-* **Recall**: Percentage of true anomalies found out of all ground-truth anomalies.
-* **Precision**: Percentage of actual anomalies within the top $K$ flagged nodes.
-* **Overlap**: Similarity between the nodes flagged by the Spectral baseline and the GLAD framework.
-
----
-
-## ⚙️ Advanced Configuration
-
-If you are extending the framework for novel datasets or modifying the core architecture, review the following tuning parameters:
-* **GNN Dimensionality**: Inside `train_glad_model`, you can modify `hidden_dim` and `output_dim` (currently set to 32).
-* **Optimization**: The model uses the Adam optimizer (`lr=0.01`) with a `StepLR` scheduler (`step_size=50`, `gamma=0.5`). 
-* **Batch Sizing**: Adjust `batch_size` (default `100,000`) based on available VRAM. Reduce this if you encounter CUDA out-of-memory exceptions during tensor concatenation.
-* **LOF Neighbors**: The `custom_lof_gpu` function defaults to `n_neighbors=20`. This can be tuned based on the average degree density of your specific graph.
-
-## 🛠️ Troubleshooting
-* **Sparse Tensor Warnings**: You may see implicit disabling of sparse invariant checks in PyTorch (`UserWarning: Sparse invariant checks...`). This is expected behavior during `torch.sparse_coo_tensor` creation and does not affect mathematical correctness.
-* **Memory Errors (Colab/Jupyter)**: If RAM becomes saturated when constructing `A_train` or evaluating `scipy_csr_to_torch_sparse`, ensure that unneeded objects are garbage collected before the GLAD loop initiates.
